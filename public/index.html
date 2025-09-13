@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Photo Gallery</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen">
+    <div id="message-box" class="fixed top-4 left-1/2 transform -translate-x-1/2 bg-green-500 text-white p-3 rounded-lg shadow-md transition-opacity duration-300 hidden z-50"></div>
+
+    <div id="auth-container" class="bg-gray-800 p-8 rounded-2xl shadow-2xl max-w-md w-full my-8 transition-all duration-300">
+        <h1 class="text-3xl font-bold text-center mb-6">AI Photo Gallery</h1>
+        <div id="auth-forms" class="w-full">
+            <div id="login-form-section">
+                <form id="login-form" class="space-y-4">
+                    <h2 class="text-xl font-semibold text-center text-white">Log In</h2>
+                    <div>
+                        <input type="email" id="login-email" placeholder="Email" required class="w-full p-3 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <input type="password" id="login-password" placeholder="Password" required class="w-full p-3 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <button type="submit" class="w-full p-3 bg-blue-600 rounded-xl font-semibold hover:bg-blue-700 transition">Log In</button>
+                    <button type="button" id="forgot-password-btn" class="w-full text-sm text-blue-400 hover:text-blue-300 mt-2">Forgot Password?</button>
+                </form>
+                <div class="my-4 text-center text-gray-400">or</div>
+                <button id="google-login-btn" class="w-full p-3 bg-gray-700 rounded-xl font-semibold flex items-center justify-center hover:bg-gray-600 transition">
+                    <i class="fab fa-google mr-2"></i> Sign In with Google
+                </button>
+                <div class="mt-4 text-center">
+                    <button id="show-signup-btn" class="text-blue-400 hover:text-blue-300">Don't have an account? Sign Up</button>
+                </div>
+            </div>
+
+            <div id="signup-form-section" class="hidden">
+                <form id="signup-form" class="space-y-4">
+                    <h2 class="text-xl font-semibold text-center text-white">Sign Up</h2>
+                    <div>
+                        <input type="email" id="signup-email" placeholder="Email" required class="w-full p-3 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <input type="password" id="signup-password" placeholder="Password (min 6 characters)" required class="w-full p-3 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <button type="submit" class="w-full p-3 bg-blue-600 rounded-xl font-semibold hover:bg-blue-700 transition">Sign Up</button>
+                </form>
+                <div class="mt-4 text-center">
+                    <button id="show-login-btn" class="text-blue-400 hover:text-blue-300">Already have an account? Log In</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="gallery-container" class="hidden w-full max-w-5xl px-4 py-8">
+        <header class="flex flex-col sm:flex-row justify-between items-center mb-8">
+            <h1 class="text-4xl font-extrabold text-white mb-4 sm:mb-0">Your Photo Gallery</h1>
+            <div class="flex items-center space-x-4">
+                <button id="upload-btn" class="p-3 bg-green-600 rounded-full shadow-lg hover:bg-green-700 transition-colors">
+                    <i class="fas fa-cloud-upload-alt text-white"></i>
+                </button>
+                <button id="signout-btn" class="p-3 bg-red-600 rounded-full shadow-lg hover:bg-red-700 transition-colors">
+                    <i class="fas fa-sign-out-alt text-white"></i>
+                </button>
+            </div>
+        </header>
+
+        <input type="file" id="file-input" accept="image/*,video/*" class="hidden" multiple>
+
+        <div id="gallery-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Gallery items will be injected here -->
+            <div id="loading-indicator" class="col-span-full text-center text-gray-400 hidden">
+                <i class="fas fa-spinner fa-spin text-4xl"></i>
+                <p class="mt-2">Uploading and analyzing images...</p>
+            </div>
+            <div id="empty-gallery" class="col-span-full text-center text-gray-500 hidden">
+                <p>Your gallery is empty. Upload some photos to get started!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+        import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Your Firebase configuration for Project ID: ai-photo-gallery-a28e2
+        const firebaseConfig = {
+          apiKey: "AIzaSyAp_WsoBqfkYiCknF9Kvzr7E4NfpziRRoI",
+          authDomain: "ai-photo-gallery-a28e2.firebaseapp.com",
+          projectId: "ai-photo-gallery-a28e2",
+          storageBucket: "ai-photo-gallery-a28e2.appspot.com",
+          messagingSenderId: "1098477914092",
+          appId: "1:1098477914092:web:9feedfc48b64e5b44962c9"
+        };
+
+        // Set Firestore and Storage log levels to debug for development
+        setLogLevel('debug');
+        
+        // Initialize Firebase services
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const storage = getStorage(app);
+        const db = getFirestore(app);
+        const googleProvider = new GoogleAuthProvider();
+
+        // The appId for your project, directly from firebaseConfig
+        const appId = firebaseConfig.appId; 
+
+        let userId = null;
+        let photosCollectionRef = null;
+
+        // UI Elements
+        const authContainer = document.getElementById('auth-container');
+        const galleryContainer = document.getElementById('gallery-container');
+        const loginFormSection = document.getElementById('login-form-section');
+        const signupFormSection = document.getElementById('signup-form-section');
+        const showSignupBtn = document.getElementById('show-signup-btn');
+        const showLoginBtn = document.getElementById('show-login-btn');
+        const loginForm = document.getElementById('login-form');
+        const signupForm = document.getElementById('signup-form');
+        const googleLoginBtn = document.getElementById('google-login-btn');
+        const forgotPasswordBtn = document.getElementById('forgot-password-btn');
+        const uploadBtn = document.getElementById('upload-btn');
+        const fileInput = document.getElementById('file-input');
+        const galleryGrid = document.getElementById('gallery-grid');
+        const signoutBtn = document.getElementById('signout-btn');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const emptyGalleryMsg = document.getElementById('empty-gallery');
+        const messageBox = document.getElementById('message-box');
+
+        // Functions for UI
+        const showMessage = (msg, type = 'success') => {
+            messageBox.textContent = msg;
+            messageBox.className = `fixed top-4 left-1/2 transform -translate-x-1/2 p-3 rounded-lg shadow-md transition-opacity duration-300 z-50 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}`;
+            messageBox.classList.remove('hidden');
+            setTimeout(() => {
+                messageBox.classList.add('hidden');
+            }, 5000);
+        };
+
+        const showLoading = (show) => {
+            loadingIndicator.classList.toggle('hidden', !show);
+        };
+
+        const showGallery = (show) => {
+            authContainer.classList.toggle('hidden', show);
+            galleryContainer.classList.toggle('hidden', !show);
+        };
+
+        const showAuthForm = (isLogin) => {
+            loginFormSection.classList.toggle('hidden', !isLogin);
+            signupFormSection.classList.toggle('hidden', isLogin);
+        };
+
+        // Auth listeners
+        showSignupBtn.addEventListener('click', () => showAuthForm(false));
+        showLoginBtn.addEventListener('click', () => showAuthForm(true));
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = loginForm['login-email'].value;
+            const password = loginForm['login-password'].value;
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                showMessage('Successfully logged in!', 'success');
+            } catch (error) {
+                showMessage(`Login Failed: ${error.message}`, 'error');
+            }
+        });
+
+        signupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = signupForm['signup-email'].value;
+            const password = signupForm['signup-password'].value;
+            try {
+                await createUserWithEmailAndPassword(auth, email, password);
+                showMessage('Account created successfully! You are now logged in.', 'success');
+            } catch (error) {
+                showMessage(`Sign Up Failed: ${error.message}`, 'error');
+            }
+        });
+
+        googleLoginBtn.addEventListener('click', async () => {
+            try {
+                await signInWithPopup(auth, googleProvider);
+                showMessage('Signed in with Google!', 'success');
+            } catch (error) {
+                showMessage(`Google Sign-In Failed: ${error.message}`, 'error');
+            }
+        });
+        
+        forgotPasswordBtn.addEventListener('click', async () => {
+            const email = loginForm['login-email'].value;
+            if (!email) {
+                showMessage('Please enter your email to reset your password.', 'error');
+                return;
+            }
+            try {
+                await sendPasswordResetEmail(auth, email);
+                showMessage('Password reset email sent!', 'success');
+            } catch (error) {
+                showMessage(`Failed to send password reset email: ${error.message}`, 'error');
+            }
+        });
+
+        signoutBtn.addEventListener('click', async () => {
+            try {
+                await signOut(auth);
+                showMessage('Signed out successfully.', 'success');
+                showGallery(false);
+            } catch (error) {
+                showMessage('Failed to sign out.', 'error');
+            }
+        });
+        
+        // Main app logic
+        // This listener will now only react to explicit sign-in/sign-out actions.
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                userId = user.uid;
+                if (!photosCollectionRef) {
+                     photosCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/photos`);
+                     listenForPhotos();
+                }
+                showGallery(true);
+            } else {
+                showGallery(false); // Hide gallery and show auth forms if no user is signed in
+                userId = null;
+                photosCollectionRef = null;
+            }
+        });
+        
+        // Image Analysis via Gemini API
+        async function analyzeImage(base64Data) {
+            const userPrompt = "Provide a concise, detailed, and polite description of the object, person, or scene in this image, including colors and actions. Do not provide a generic response.";
+            const apiKey = ""; // <--- IMPORTANT: You need to get a separate API Key for the Gemini API (Google Cloud's Generative Language API) and put it here. This is NOT your Firebase API key.
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [
+                    {
+                        role: "user",
+                        parts: [
+                            { text: userPrompt },
+                            { inlineData: { mimeType: "image/png", data: base64Data } }
+                        ]
+                    }
+                ],
+            };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`API error: ${JSON.stringify(errorData)}`);
+                }
+
+                const result = await response.json();
+                const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                return text || "No description could be generated.";
+            } catch (error) {
+                console.error("AI Analysis Failed:", error);
+                return "AI analysis failed. Please try again later.";
+            }
+        }
+
+        // File upload and storage
+        uploadBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', async (e) => {
+            const files = e.target.files;
+            if (!files.length) return;
+
+            showLoading(true);
+
+            for (const file of files) {
+                try {
+                    const fileId = Date.now() + '-' + file.name;
+                    const storageRef = ref(storage, `artifacts/${appId}/users/${userId}/photos/${fileId}`);
+
+                    const uploadTask = await uploadBytes(storageRef, file);
+                    const fileUrl = await getDownloadURL(uploadTask.ref);
+                    
+                    // Convert file to base64 for AI analysis
+                    const reader = new FileReader();
+                    reader.readAsDataURL(file);
+                    reader.onload = async () => {
+                        const base64Data = reader.result.split(',')[1];
+                        const description = await analyzeImage(base64Data);
+
+                        await addDoc(photosCollectionRef, {
+                            name: file.name,
+                            url: fileUrl,
+                            description: description,
+                            timestamp: new Date(),
+                            type: file.type.startsWith('image/') ? 'image' : 'video'
+                        });
+
+                        showMessage(`${file.name} uploaded and analyzed!`);
+                        showLoading(false);
+                    };
+                } catch (error) {
+                    console.error("Upload failed:", error);
+                    showMessage(`Upload failed: ${error.message}`, 'error');
+                    showLoading(false);
+                }
+            }
+        });
+
+        // Firestore real-time listener
+        const listenForPhotos = () => {
+            if (!photosCollectionRef) return;
+            onSnapshot(photosCollectionRef, (querySnapshot) => {
+                galleryGrid.innerHTML = '';
+                const items = [];
+                querySnapshot.forEach(doc => {
+                    items.push({ id: doc.id, ...doc.data() });
+                });
+
+                items.sort((a, b) => b.timestamp.toDate() - a.timestamp.toDate());
+
+                if (items.length === 0) {
+                    emptyGalleryMsg.classList.remove('hidden');
+                } else {
+                    emptyGalleryMsg.classList.add('hidden');
+                    items.forEach(item => {
+                        const card = document.createElement('div');
+                        card.className = "bg-gray-800 rounded-xl shadow-lg overflow-hidden group transition-transform hover:scale-105 duration-300 relative";
+                        
+                        let mediaHtml = '';
+                        if (item.type === 'image') {
+                            mediaHtml = `<img src="${item.url}" alt="${item.description}" class="w-full h-48 object-cover">`;
+                        } else {
+                            mediaHtml = `<video src="${item.url}" controls class="w-full h-48 object-cover"></video>`;
+                        }
+
+                        card.innerHTML = `
+                            ${mediaHtml}
+                            <div class="p-4">
+                                <h3 class="font-semibold text-lg text-white mb-2">${item.name}</h3>
+                                <p class="text-sm text-gray-400 truncate">${item.description}</p>
+                            </div>
+                            <button class="delete-btn absolute top-2 right-2 p-2 bg-red-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" data-id="${item.id}" data-url="${item.url}">
+                                <i class="fas fa-trash text-white"></i>
+                            </button>
+                        `;
+                        galleryGrid.appendChild(card);
+                    });
+                    attachDeleteListeners();
+                }
+            });
+        };
+
+        // Attach event listener for delete buttons
+        const attachDeleteListeners = () => {
+            document.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    const docId = e.currentTarget.dataset.id;
+                    const fileUrl = e.currentTarget.dataset.url;
+                    
+                    try {
+                        // Delete file from Firebase Storage
+                        const fileRef = ref(storage, fileUrl);
+                        await deleteObject(fileRef);
+
+                        // Delete document from Firestore
+                        await deleteDoc(doc(photosCollectionRef, docId));
+                        
+                        showMessage('File deleted successfully!', 'success');
+                    } catch (error) {
+                        console.error("Deletion failed:", error);
+                        showMessage(`Deletion failed: ${error.message}`, 'error');
+                    }
+                });
+            });
+        };
+    </script>
+</body>
+</html>
